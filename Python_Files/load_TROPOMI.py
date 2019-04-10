@@ -4,8 +4,7 @@
 # Load all the TROPOMI data from the .nc files in SOURCE
 # and import it into the specified local database 
 
-# NetCDF docs: https://docs.scipy.org/doc/scipy-0.16.1/reference/generated/scipy
-# .io.netcdf.netcdf_file.html
+# NetCDF docs: http://unidata.github.io/netcdf4-python/netCDF4/index.html
 
 # Finding files in directory: https://stackoverflow.com/questions/3964681/find-
 # all-files-in-a-directory-with-extension-txt-in-python
@@ -19,6 +18,7 @@ import netCDF4 as nc 			# For parsing data format
 import mysql.connector as dbapi # For connecting to database
 from datetime import datetime 	# For converting unix time to SQL datetime
 import time 					# For timing the insertion
+import numpy as np 				# For accessing the data more efficiently
 
 
 # Connect to database
@@ -29,7 +29,7 @@ conn = dbapi.connect(host='127.0.0.1', port=3306, user='root',
 
 cursor = conn.cursor()
 
-t = time.time()
+t0 = time.time()
 
 # For each data file in the directory 
 for file in sorted(os.listdir(SOURCE)):
@@ -38,37 +38,55 @@ for file in sorted(os.listdir(SOURCE)):
 
 		# Parse it
 
-		nc_file = nc.Dataset(SOURCE + file)
+		nc_file = nc.Dataset(SOURCE + file, 'r')
 		keys = nc_file.variables.keys()
 
-		datetimes = nc_file.variables['TIME']
-		sifs = nc_file.variables['sif']
-		lats = nc_file.variables['lat']
-		lons = nc_file.variables['lon']
+		# Very important to convert to numpy array here!!
+		# It takes orders of magnitude longer to use the 
+		# native Dataset format
+
+		datetimes = np.array(nc_file.variables['TIME'])
+		sifs = np.array(nc_file.variables['sif'])
+		lats = np.array(nc_file.variables['lat'])
+		lons = np.array(nc_file.variables['lon'])
 
 		num_rows = len(datetimes)
 
-		# And enter each record into the database
+		# Enter each record into the database
+
+		# Use this string to construct a batch insert SQL statement
+		cmd = 'INSERT INTO tropomi VALUES '
+
+		t1 = time.time()
 
 		for i in range(num_rows):
 
-			if (i % 100000 == 0):
-				print(str(i/num_rows * 100) + '%')
+			# Insert rows in chunks of 100,000 records
+			if ((i+1) % 100000 == 0):
+				print(str(i/num_rows * 100) + '% completed')
 
-			utc_date = datetimes[i]
+				cmd = cmd[:-2]
+				print('time to parse rows: ' + str(time.time() - t1))
 
-			date = datetime.utcfromtimestamp(utc_date).strftime\
+				t2 = time.time()
+				cursor.execute(cmd)
+				conn.commit()
+				print('time to insert: ' + str(time.time() - t2))
+				cmd = 'INSERT INTO tropomi VALUES '
+
+				t1 = time.time()
+
+			# Convert from utc to datetime
+			date = datetime.utcfromtimestamp(datetimes[i]).strftime\
 				('%Y-%m-%d %H:%M:%S')
 
-			sif = str(sifs[i])
-			lat = str(lats[i])
-			lon = str(lons[i])
+			# Append to SQL statement
+			cmd += '(NULL, \' %s \' , %s, %s, %s), ' % \
+					(date, sifs[i], lats[i], lons[i])
+		
+		cursor.execute(cmd[:-2])
+		conn.commit()
 
-			cmd = "INSERT INTO tropomi VALUES (NULL, \'" + str(date) + "\', " + sif + \
-												", " + lat + ", " + lon + ")"
-			cursor.execute(cmd)
+		break
 
-
-print("elapsed time: " + str(time.time() - t))
-
-conn.commit()
+print('total elapsed time: ' + str(time.time() - t0))
