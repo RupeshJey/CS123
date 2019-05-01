@@ -13,8 +13,6 @@
 
 SOURCE = '../TROPOMI_Data/'
 
-INSERT_PREFIX = 'INSERT INTO tropomi VALUES '
-
 import os						# For searching through files
 import netCDF4 as nc 			# For parsing data format
 import mysql.connector as dbapi # For connecting to database
@@ -64,28 +62,14 @@ for file in sorted(os.listdir(SOURCE)):
 
 		# Enter each record into the database
 
-		# Use this string to construct a batch insert SQL statement
-		cmd = INSERT_PREFIX
-
 		t1 = time.time()
 
+		# Insert rows one-by-one
 		for i in range(num_rows):
 
-			# Insert rows in chunks of 100,000 records
-			# 100000
-			if ((i+1) % 60 == 0):
+			# Temporary cap of N inserts
+			if ((i+1) % 32 == 0):
 				print(str(i/num_rows * 100) + '% completed')
-
-				cmd = cmd[:-2]
-				print('time to parse rows: ' + str(time.time() - t1))
-
-				t2 = time.time()
-				cursor.execute(cmd)
-				conn.commit()
-				print('time to insert: ' + str(time.time() - t2))
-				cmd = INSERT_PREFIX
-
-				t1 = time.time()
 				break
 
 			# Convert from utc to datetime
@@ -104,13 +88,14 @@ for file in sorted(os.listdir(SOURCE)):
 			mbr_brc_lon = max(lon_bnds[:,i])
 
 			# Append to SQL statement
-			cmd += '(NULL, \' %s \' , %s, %s, %s, %s, %s, %s, %s), ' % \
+			cmd = 'CALL rtree_insert(\' %s \' , %s, %s, %s, %s, %s, %s, %s)' % \
 					(date, sifs[i], lats[i], lons[i], \
 					 mbr_tlc_lat, mbr_tlc_lon, mbr_brc_lat, mbr_brc_lon)
+			print(cmd)
 		
-		if (cmd != INSERT_PREFIX):
-			cursor.execute(cmd[:-2])
-			conn.commit()
+			cursor.execute(cmd)
+			
+		conn.commit()
 
 		break
 

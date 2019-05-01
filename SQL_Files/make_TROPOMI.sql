@@ -115,9 +115,6 @@ CREATE TABLE rtree_properties (
 
 DELIMITER !
 
-CREATE PROCEDURE 
-
-
 CREATE TRIGGER trg_insert AFTER INSERT ON tropomi FOR EACH ROW
 BEGIN 
     
