@@ -12,7 +12,13 @@ DROP TABLE IF EXISTS nodes;
 DROP TABLE IF EXISTS tropomi;
 DROP TABLE IF EXISTS rtree_properties; 
 
--- tropomi holds the 
+-- tropomi holds the satellite data without geospatial data
+
+-- tropomi_id is an auto-incrementing integer that can be used
+-- to identify the record uniquely
+-- time is when the datapoint was recorded (UTC)
+-- SIF is solar induced fluorescence, the property we are examining
+
 CREATE TABLE tropomi (
 
     tropomi_id  INTEGER                  AUTO_INCREMENT, 
@@ -22,6 +28,11 @@ CREATE TABLE tropomi (
     PRIMARY KEY (tropomi_id)
     
 );
+
+-- nodes contains all the rtree nodes and their entry count
+-- level is the level of the tree where the node is located 0...depth
+-- node_id specifies the node within the level 
+-- num_entries should update the number of entries per node. 
 
 CREATE TABLE nodes (
 
@@ -33,6 +44,9 @@ CREATE TABLE nodes (
     
 );
 
+-- This table should hold all the entry id's
+-- Self-explanatory, auto-incrementing
+
 CREATE TABLE rtree_entries (
 
     entry_id        INTEGER             AUTO_INCREMENT,
@@ -40,6 +54,11 @@ CREATE TABLE rtree_entries (
     PRIMARY KEY (entry_id)
     
 );
+
+-- This table specifically holds all the entries in inner nodes
+-- entry_id is a foreign key to rtree_entries (entry_id)
+-- child_node_id is an integer that points to the child node
+-- level and node_id are same as above
 
 CREATE TABLE inner_node_entries (
     
@@ -62,6 +81,11 @@ CREATE TABLE inner_node_entries (
     
 ); 
 
+-- This table is very similar to the above, except it contains 
+-- the pointer to tropomi table instead of a child node. This is
+-- because it each leaf should be correlated with exactly one
+-- data record. 
+
 CREATE TABLE leaf_node_entries (
     
     entry_id             INTEGER        NOT NULL,
@@ -83,12 +107,17 @@ CREATE TABLE leaf_node_entries (
     
 ); 
 
+-- This is the table with all the geometric properties of  
+-- each entry. 
+
+-- The points were NUMERIC(10,7) because we don't need
+-- more than 3 digits to the left of the decimal (-180 to 180)
+-- The areas were NUMERIC(10,5) since we could get a max
+-- value of 180 * 360 = 64,800. 
+
 CREATE TABLE entry_geom (
 
     entry_id        INTEGER         NOT NULL, 
-    
-    center_lat         NUMERIC(10, 7)      NOT NULL,
-    center_lon        NUMERIC(10, 7)      NOT NULL, 
     
     mbr_tlc_lat       NUMERIC(10, 7)      NOT NULL, 
     mbr_tlc_lon      NUMERIC(10, 7)      NOT NULL, 
@@ -96,12 +125,15 @@ CREATE TABLE entry_geom (
     mbr_brc_lat      NUMERIC(10, 7)      NOT NULL, 
     mbr_brc_lon     NUMERIC(10, 7)      NOT NULL, 
     
-    area                  NUMERIC(10, 5)      NOT NULL, 
+    center_lat         NUMERIC(10, 7)      GENERATED ALWAYS AS ((mbr_tlc_lat + mbr_brc_lat) / 2),
+    center_lon        NUMERIC(10, 7)      GENERATED ALWAYS AS ((mbr_tlc_lon + mbr_brc_lon) / 2), 
+    
+    area                  NUMERIC(10, 5)      GENERATED ALWAYS AS ((mbr_tlc_lat - mbr_brc_lat) * (mbr_brc_lon - mbr_tlc_lon)), 
     
     PRIMARY KEY (entry_id),
     
     CONSTRAINT FOREIGN KEY (entry_id)
-        REFERENCES rtree_entries (entry_id) 
+        REFERENCES rtree_entries (entry_id) ON UPDATE CASCADE
 
 ); 
 

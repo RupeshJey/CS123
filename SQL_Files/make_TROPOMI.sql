@@ -16,7 +16,6 @@ DROP TABLE IF EXISTS rtree_nodes;
 -- DROP TRIGGER commands: 
 
 DROP TRIGGER IF EXISTS trg_insert; 
--- DROP TRIGGER IF EXISTS trg_insert;
 
 -- CREATE TABLE commands:
 
