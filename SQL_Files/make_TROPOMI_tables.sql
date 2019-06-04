@@ -67,8 +67,7 @@ CREATE TABLE inner_node_entries (
     level                   INTEGER        NOT NULL, 
     node_id              INTEGER       NOT NULL,
     
-    PRIMARY KEY (entry_id),
-    UNIQUE (child_node_id)
+    PRIMARY KEY (entry_id, child_node_id, level, node_id)
     
 --     CONSTRAINT FOREIGN KEY ((level+1), child_node_id)
 --         REFERENCES  rtree_entries (level, node_id)
@@ -91,10 +90,10 @@ CREATE TABLE leaf_node_entries (
     entry_id             INTEGER        NOT NULL,
     tropomi_id         INTEGER        NOT NULL, 
     level                   INTEGER       NOT NULL, 
-    node_id              INTEGER       NOT NULL
+    node_id              INTEGER       NOT NULL,
     
-    -- PRIMARY KEY (entry_id), Disabling for 
-    -- UNIQUE (tropomi_id), Disabling temporarily
+    PRIMARY KEY (entry_id, tropomi_id, level, node_id)
+    -- UNIQUE (level, tropomi_id) -- , Disabling temporarily
     
     -- CONSTRAINT FOREIGN KEY (tropomi_id)
 --         REFERENCES  tropomi (tropomi_id),
@@ -128,7 +127,7 @@ CREATE TABLE entry_geom (
     center_lat         NUMERIC(10, 7)      GENERATED ALWAYS AS ((mbr_tlc_lat + mbr_brc_lat) / 2),
     center_lon        NUMERIC(10, 7)      GENERATED ALWAYS AS ((mbr_tlc_lon + mbr_brc_lon) / 2), 
     
-    area                  NUMERIC(10, 5)      GENERATED ALWAYS AS ((mbr_tlc_lat - mbr_brc_lat) * (mbr_brc_lon - mbr_tlc_lon)), 
+    area                  NUMERIC(10, 5)      GENERATED ALWAYS AS ((mbr_tlc_lat - mbr_brc_lat) * (mbr_brc_lon - mbr_tlc_lon)),
     
     PRIMARY KEY (entry_id)
     
@@ -141,10 +140,6 @@ CREATE TABLE rtree_properties (
     min_entries       INTEGER            NOT NULL,
     max_entries      INTEGER            NOT NULL, 
     depth                INTEGER            NOT NULL
---     a   NUMERIC(10, 5), 
---     b NUMERIC(10, 5),
---     c   NUMERIC(10, 5), 
---     d NUMERIC(10, 5)
 );
 
 -- Populating the rtree with basic info: 
@@ -153,3 +148,7 @@ INSERT INTO rtree_properties VALUES (1, 30, 0);
 
 -- Create the root node of rtree. 
 INSERT INTO nodes VALUES (0, 0, 0);
+
+-- Indices on the levels (found to be bottleneck)
+-- CREATE INDEX leaf_levels ON leaf_node_entries (level);
+CREATE INDEX inner_levels ON inner_node_entries (level, child_node_id);
