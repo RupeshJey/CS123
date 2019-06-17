@@ -28,7 +28,7 @@ import numpy as np 				# For accessing the data more efficiently
 # For creating images from rectangles
 import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Rectangle, Circle
 from PIL import Image
 import imageio
 import glob
@@ -42,7 +42,7 @@ ANIMATE = False
 max_length = 360
 max_height = 180
 
-NUM_TO_INSERT = 5000
+NUM_TO_INSERT = 500
 
 rect_num = 0
 
@@ -50,7 +50,7 @@ im = np.array(Image.open('../Images/base.jpg'), dtype=np.uint8)
 
 fig, ax = plt.subplots()
 
-colors = ['b', 'r', 'g']
+colors = ['darkred', 'darkorange', 'darkgreen', 'lightseagreen', 'royalblue', 'darkviolet']
 
 # Connect to database
 
@@ -81,6 +81,7 @@ horizontal_splits = 'make_TROPOMI_insert_horizontal.sql\"'
 constant_splits = 'make_TROPOMI_insert_constant.sql\"'
 half_splits = 'make_TROPOMI_insert_half.sql\"'
 gs_splits = 'make_TROPOMI_insert_graham_scan.sql\"'
+gs_rc_splits = 'make_TROPOMI_insert_rotating_calipers.sql\"'
 
 # This function saves an image of the geometries at the current state
 def save_geom_im(save_name='', dpi=100):
@@ -145,7 +146,8 @@ def save_geom_im(save_name='', dpi=100):
 
 		rect = Rectangle((r[1] + 180 , 180 - (r[2] + 90) - curr_height), 
 			curr_len, curr_height, fill = False, linewidth = 0.5, 
-			color = colors[int(r[4])])
+			color = colors[int(r[4])], 
+			alpha = 0.65)
 		ax.add_patch(rect)
 
 		if i % 10000 == 0:
@@ -173,7 +175,7 @@ def atoi(text):
 def natural_keys(text):
     return [ atoi(c) for c in re.split(r'(\d+)', text) ]
 
-def run_insertions():
+def run_insertions(seed = -1):
 
 	# List to store runtimes
 	times = []
@@ -202,6 +204,9 @@ def run_insertions():
 			num_rows = len(datetimes)
 
 			# Randomize the order
+
+			if (seed != -1):
+				np.random.seed(seed)
 
 			permutation = np.random.permutation(num_rows)
 			datetimes = datetimes[permutation]
@@ -273,50 +278,171 @@ def gif_from_rects():
 
 	os.system("rm rect*.png")
 
-def run(insert_def_file_cmd, save_file):
+def run(insert_def_file_cmd, save_file, seed = -1):
 	os.system(make_tables_cmd)
 	os.system(insert_def_file_cmd)
 
 	t0 = time.time()
-	times = run_insertions()
+	times = run_insertions(seed)
 	print('time to insert: ' + str(time.time() - t0))
-	save_geom_im(save_name=save_file)
+	save_geom_im(save_name=save_file, dpi=100)
+	# conn.commit()
 
 	return times
 
+def plot_convex_hull(dpi = 100):
+
+	# global rect_num
+
+	query = '(SELECT center_lat, center_lon \
+			 FROM \
+			 entry_geom NATURAL JOIN leaf_node_entries);'
+
+	cursor.execute(query)
+
+	# build rectangles array
+	ch_points = []
+	for (center_lat, center_lon) in cursor :
+		ch_points.append([float(center_lat), float(center_lon)])
+
+	# list -> np.array
+	ch_points = np.array(ch_points)
+
+	# print(ch_points)
+
+	for ch in ch_points:
+		ch_pt = Circle((ch[1] + 180 , 180 - (ch[0] + 90)), radius = 2, fill = True, linewidth = 0.5, 
+			color = 'r')
+		ax.add_patch(ch_pt)
+
+	# query to get all rectangles after insert
+	query = '(SELECT center_lat, center_lon, stack_pos \
+			 FROM \
+			 entry_geom NATURAL JOIN stack_L ORDER BY stack_pos);'
+
+	cursor.execute(query)
+
+	# build rectangles array
+	ch_points = []
+	for (center_lat, center_lon, stack_pos) in cursor :
+		ch_points.append([float(center_lat), float(center_lon)])
+
+	# list -> np.array
+	ch_points = np.array(ch_points)
+
+	print("important")
+	print(ch_points)
+
+	i = 1.0
 
 
+	prev_point = ((ch_points[0])[1] + 180, 180 - ((ch_points[0])[0] + 90))
+	first = prev_point
+
+	for ch in ch_points:
+		print(str(ch[1] + 180) + ", " + str(180 - (ch[0] + 90)))
+		ch_pt = Circle((ch[1] + 180 , 180 - (ch[0] + 90)), radius = 2, fill = True, linewidth = 0.5, 
+			color = 'b')
+		ax.add_patch(ch_pt)
+		
+		# plt.plot([prev_point[0], ch[1] + 180],[prev_point[1], 180 - (ch[0] + 90)], color="b")
+
+		prev_point = (ch[1] + 180, 180 - (ch[0] + 90))
+
+	query = '(SELECT center_lat, center_lon, stack_pos \
+			 FROM \
+			 entry_geom NATURAL JOIN stack_R ORDER BY stack_pos);'
+
+	cursor.execute(query)
+
+	# build rectangles array
+	ch_points = []
+	for (center_lat, center_lon, stack_pos) in cursor :
+		ch_points.append([float(center_lat), float(center_lon)])
+
+	# list -> np.array
+	ch_points = np.array(ch_points)
+
+	# print("important")
+	# print(ch_points)
+
+	i = 1.0
+
+
+	prev_point = ((ch_points[0])[1] + 180, 180 - ((ch_points[0])[0] + 90))
+	first = prev_point
+
+	for ch in ch_points:
+		print(str(ch[1] + 180) + ", " + str(180 - (ch[0] + 90)))
+		ch_pt = Circle((ch[1] + 180 , 180 - (ch[0] + 90)), radius = 2, fill = True, linewidth = 0.5, 
+			color = 'g')
+		ax.add_patch(ch_pt)
+		
+		# plt.plot([prev_point[0], ch[1] + 180],[prev_point[1], 180 - (ch[0] + 90)], color="b")
+
+		prev_point = (ch[1] + 180, 180 - (ch[0] + 90))
+
+	# plt.plot([prev_point[0], first[0]],[prev_point[1], first[1]], color="b")
+
+	query = '(SELECT center_lat, center_lon \
+			 FROM \
+			 entry_geom NATURAL JOIN ap_points ORDER BY center_lat);'
+
+	cursor.execute(query)
+
+	# build rectangles array
+	ch_points = []
+	for (center_lat, center_lon) in cursor :
+		ch_points.append([float(center_lat), float(center_lon)])
+
+	# list -> np.array
+	ch_points = np.array(ch_points)
+
+	print(ch_points)
+
+	c = 'g'
+
+	for ch in ch_points:
+		ch_pt = Circle((ch[1] + 180 , 180 - (ch[0] + 90)), radius = 5, fill = True, linewidth = 0.5, 
+			color = c)
+		ax.add_patch(ch_pt)
+		c = 'b'
+
+	# plt.imshow(im)
+
+	# plt.savefig('rect{}.png'.format(rect_num), dpi = dpi)
+
+	# rect_num = rect_num + 1
+
+	conn.commit()
+
+	#plt.cla()
+
+	#[p.remove() for p in reversed(ax.patches)]
 
 # times1 = run(make_inserts_cmd, 'normal_split.png')
 # times4 = run(make_inserts_variants + constant_splits, 'constant_split.png')
-times5 = run(make_inserts_variants + half_splits, 'half_split.png')
-times6 = run(make_inserts_variants + gs_splits, 'gs_split.png')
+times5 = run(make_inserts_variants + half_splits, 'half_split.png', seed =10)
+
+
+# save_geom_im(save_name='gs_split.png', dpi=2500)
+
+# rect_num = 0
+
+# times6 = run(make_inserts_variants + gs_splits, 'gs_split.png', seed = 10)
+times7 = run(make_inserts_variants + gs_rc_splits, 'gs_rc_split.png', seed = 10)
+
+# for i in range(100): 
+# 	print(i)
+# 	# times6 = run(make_inserts_variants + gs_splits, 'gs_split.png', seed=i)
+# 	run(make_inserts_variants + gs_splits, 'gs_split.png', seed=i)
+# plot_convex_hull()
+
 # gif_from_rects()
-# os.system(make_tables_cmd)
-# os.system(make_inserts_variants + vertical_splits)
-# times2 = run_insertions()
-# save_geom_im(save_name='vertical_split.png')
-
-# os.system(make_tables_cmd)
-# os.system(make_inserts_variants + horizontal_splits)
-# times3 = run_insertions()
-# save_geom_im(save_name='horizontal_split.png')
-
-# os.system(make_tables_cmd)
-# os.system(make_inserts_variants + constant_splits)
-# times4 = run_insertions()
-# save_geom_im(save_name='constant_split.png')
-
-# os.system(make_tables_cmd)
-# os.system(make_inserts_variants + half_splits)
-# t0 = time.time()
-# times5 = run_insertions()
-# print('time to insert: ' + str(time.time() - t0))
-# save_geom_im(save_name='half_split.png')
+# plt.show()
 
 
-
-plt.clf()
+plt.cla()
 fig, ax = plt.subplots()
 # plt.scatter(np.arange(len(times1)), times1, s=5)
 plt.scatter(np.arange(0), [], s=5)
@@ -324,11 +450,15 @@ plt.scatter(np.arange(0), [], s=5)
 plt.scatter(np.arange(0), [], s=5)
 plt.scatter(np.arange(0), [], s=5)
 # plt.scatter(np.arange(0), [], s=5)
+# plt.scatter(np.arange(0), [], s=5)
 # plt.scatter(np.arange(len(times2)), times2, s=5)
 # plt.scatter(np.arange(len(times3)), times3, s=5)
 # plt.scatter(np.arange(len(times4)), times4, s=5)
 plt.scatter(np.arange(len(times5)), times5, s=5)
-plt.scatter(np.arange(len(times6)), times6, s=5)
+plt.scatter(np.arange(0), [], s=5)
+# plt.scatter(np.arange(len(times6)), times6, s=5)
+plt.scatter(np.arange(len(times7)), times7, s=5)
+
 ax.set_ylabel('Time (s)')
 ax.set_xlabel('Element #')
 ax.legend(['normal_split', 
@@ -336,7 +466,8 @@ ax.legend(['normal_split',
 	'horizontal_split_constant', 
 	'switched_sql_command', 
 	'half_cross_join',
-	'gs_split'])
+	'gs_split', 
+	'rotating_calipers'])
 plt.show()
 
 
